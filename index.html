@@ -1,0 +1,1715 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Proxmark WebSerial</title>
+
+    <script src="https://www.unpkg.com/kaitai-struct@0.10.0/KaitaiStream.js"> </script>
+    <script src="https://www.unpkg.com/kaitai-struct-compiler@0.10.0/kaitai-struct-compiler.js"> </script>
+    <script src="https://www.unpkg.com/js-yaml@4.1.0/dist/js-yaml.min.js"> </script>
+    <script>
+        const firmwareUrl = "https://upload.g3gg0.de/pub_files/e09eb69e3fd59638ab20c5f10458c1c8/fullimage.bin";
+    </script>
+
+    <style>
+        html {
+            background-color: #303030;
+            color: #fff;
+        }
+
+        #log {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: black;
+            color: #a8a8a8;
+            padding: 2px;
+            margin-right: 20px;
+            width: 80%;
+            height: 800px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            border: 1px solid #ccc;
+            padding: 8px;
+            overflow-x: auto;
+            overflow-y: auto;
+        }
+
+        .branding {
+            font-family: Arial, sans-serif;
+            font-size: 30;
+        }
+
+        .main-container {
+            font-family: Arial, sans-serif;
+            font-size: 20;
+            padding: 10px;
+        }
+
+        .command-container {
+            font-family: Arial, sans-serif;
+            font-size: 20;
+            margin-top: 20px;
+            padding: 10px;
+        }
+
+        .flash-container {
+            font-family: Arial, sans-serif;
+            font-size: 20;
+            margin-top: 20px;
+            padding: 10px;
+        }
+
+        .flash-container>div {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .flash-container div {
+            margin-bottom: 10px;
+            /* Adjust the space between lines as needed */
+        }
+
+        /* Optional: Align the text and button/input for aesthetic purposes */
+        .flash-container input,
+        .flash-container button {
+            margin-left: 10px;
+            /* Adjust according to your design */
+        }
+
+        .flash-container>div>*:first-child {
+            flex-shrink: 0;
+            margin-right: 10px;
+        }
+
+        .error {
+            display: flex;
+            background-color: rgb(255, 127, 127);
+            color: #000;
+            padding: 10px;
+            align-items: center;
+            border-radius: 10px;
+            font-size: 16px;
+        }
+
+        .error-text {
+            padding: 2px;
+            margin-right: 20px;
+        }
+
+        .alert {
+            display: flex;
+            background-color: aquamarine;
+            color: #000;
+            padding: 10px;
+            align-items: center;
+            border-radius: 10px;
+            font-size: 16px;
+        }
+
+        .alert-text {
+            padding: 2px;
+            margin-right: 20px;
+        }
+
+        .btn.alert-action {
+            font-size: 16px;
+            padding: 4px;
+            background-color: transparent;
+            border: 2px solid #333;
+            border-radius: 5px;
+            color: #333;
+            transition: background-color 0.3s ease;
+        }
+
+        .btn.alert-action:hover {
+            background-color: #333;
+            color: white;
+        }
+
+        .btn.command {
+            font-size: 16px;
+            padding: 4px;
+            background-color: #007766;
+            border: 2px solid #fff;
+            border-radius: 5px;
+            color: white;
+            transition: background-color 0.3s ease;
+        }
+
+        .btn.command:hover {
+            background-color: #004444;
+            color: white;
+        }
+    </style>
+</head>
+
+
+<body cds-theme="dark">
+    <!--noformat-->
+    <div class="ksy" id="iso15693_ksy" style="display: none">
+meta:
+  id: iso15693
+  title: ISO15693 NFC protocol
+  endian: le
+  
+seq:
+  - id: request_response
+    type: request_response
+    repeat: expr
+    repeat-expr: 3
+
+types:
+  request_response:
+    seq:
+      - id: req_len
+        type: u1
+      - id: req
+        type: request
+      - id: res_len
+        type: u1
+      - id: res
+        type:
+          switch-on: req.command
+          cases:
+            'command_type::inventory': res_inventory
+            'command_type::get_system_information': res_get_system_information
+            'command_type::read_single_block': res_read_single_block
+            _: res_empty
+        
+  request:
+    seq:
+      - id: flags
+        type: req_flags
+      - id: command
+        type: u1
+        enum: command_type
+      - id: manufacturer_code
+        type: u1
+        enum: manufacturer_code_type
+        if: command.to_i >= 0xA0
+      - id: uid
+        type: u8
+        if: flags.address_slots == true and flags.inventory == false
+      - id: payload
+        type:
+          switch-on: command
+          cases:
+            'command_type::inventory': req_inventory
+            'command_type::read_single_block': req_read_single_block
+            'command_type::write_single_block': req_write_single_block
+            'command_type::lock_block': req_lock_block
+            'command_type::write_dsfid': req_write_dsfid
+            'command_type::read_multi_block': req_read_multi_block
+            'command_type::write_multi_block': req_write_multi_block
+            'command_type::nxp_set_password': req_nxp_set_password
+            'command_type::nxp_write_password': req_nxp_write_password
+            'command_type::nxp_lock_password': req_nxp_lock_password
+            'command_type::nxp_destroy': req_nxp_destroy
+            'command_type::nxp_enable_privacy': req_nxp_enable_privacy
+            'command_type::nxp_write_eas_id': req_nxp_write_eas_id
+            _: no_payload
+      - id: crc
+        type: u2
+
+  no_payload:
+    seq:
+      - id: dummy
+        size: 0
+        
+  res_empty:
+    seq:
+      - id: flags
+        type: res_flags
+      - id: error_code
+        type: u8
+        if: flags.error
+      - id: crc
+        type: u2
+
+  ################ Flags ################ 
+  req_flags:
+    doc: general request flags, defined in ISO15693-3 7.3.2
+    seq:
+      - id: rfu
+        type: b1
+      - id: option
+        type: b1
+      - id: address_slots
+        type: b1
+        doc: dual-use, depending on inventory flag, which comes after
+      - id: select_afi
+        type: b1
+        doc: dual-use, depending on inventory flag, which comes after
+      - id: protocol_extension
+        type: b1
+      - id: inventory
+        type: b1
+      - id: data_rate
+        type: b1
+      - id: sub_carrier
+        type: b1
+        
+  res_flags:
+    doc: general response flags, defined in ISO15693-3 7.4.2
+    seq:
+      - id: rfu
+        type: b1
+      - id: waiting_time_extension
+        type: b1
+      - id: block_security_status
+        type: b2
+      - id: extension
+        type: b1
+      - id: final_response
+        type: b1
+      - id: responsebuffer_validity
+        type: b1
+      - id: error
+        type: b1
+        
+  ################ Inventory ################ 
+  req_inventory:
+    seq:
+      - id: afi
+        type: u1
+        if: _parent.flags.select_afi == true
+      - id: mask_length
+        type: u1
+      - id: mask
+        size: mask_length/8
+        
+  res_inventory:
+    seq:
+      - id: flags
+        type: res_info_flags
+      - id: dsfid
+        type: u1
+      - id: uid
+        type: u8
+      - id: crc
+        type: u2
+        
+  ################ Get System Information ################ 
+  res_get_system_information:
+    seq:
+      - id: flags
+        type: res_flags
+      - id: info_flags
+        type: res_info_flags
+      - id: uid
+        type: u8
+      - id: dsfid
+        type: u1
+        if: info_flags.dsfid
+      - id: afi
+        type: u1
+        if: info_flags.afi
+      - id: vicc_memory_size
+        type: res_vicc_memory_size
+        if: info_flags.vicc_memory_size
+      - id: ic_reference
+        type: u1
+        if: info_flags.ic_reference
+      - id: crc
+        type: u2
+        
+  res_info_flags:
+    seq:
+      - id: prop1
+        type: b1
+      - id: prop2
+        type: b1
+      - id: prop3
+        type: b1
+      - id: prop4
+        type: b1
+      - id: ic_reference
+        type: b1
+      - id: vicc_memory_size
+        type: b1
+      - id: afi
+        type: b1
+      - id: dsfid
+        type: b1
+        
+        
+  res_vicc_memory_size:
+    seq:
+      - id: proprietary
+        type: b3
+      - id: block_size
+        type: b5
+      - id: block_count
+        type: b8
+        
+        
+  ################ Lock Block ################ 
+  req_lock_block:
+    seq:
+      - id: block
+        type: u1
+        
+  ################ Read Block ################ 
+  req_read_single_block:
+    seq:
+      - id: block
+        type: u1
+        
+  res_read_single_block:
+    seq:
+      - id: flags
+        type: res_info_flags
+      - id: data
+        size: _parent.res_len - 3
+      - id: crc
+        type: u2
+       
+  ################ Write Block ################  
+  req_write_single_block:
+    seq:
+      - id: block
+        type: u1
+        
+  ################ Write DSFID ################  
+  req_write_dsfid:
+    seq:
+      - id: dsfid
+        type: u1
+        
+  ################ Read Multiple Blocks ################ 
+  req_read_multi_block:
+    seq:
+      - id: block
+        type: u1
+        
+  ################ Write Multiple Blocks ################ 
+  req_write_multi_block:
+    seq:
+      - id: block
+        type: u1
+        
+        
+  ################ NXP SLIX: Set Password ################ 
+  req_nxp_set_password:
+    seq:
+      - id: password_id
+        type: u1
+        enum: nxp_password_type
+      - id: password_xor
+        type: u4
+        
+  ################ NXP SLIX: Write Password ################ 
+  req_nxp_write_password:
+    seq:
+      - id: password_id
+        type: u1
+        enum: nxp_password_type
+      - id: password
+        type: u4
+        
+  ################ NXP SLIX: Lock Password ################ 
+  req_nxp_lock_password:
+    seq:
+      - id: password_id
+        type: u1
+        enum: nxp_password_type
+       
+  ################ NXP SLIX: Destroy ################  
+  req_nxp_destroy:
+    seq:
+      - id: password_xor
+        type: u4
+    
+  ################ NXP SLIX: Enable Privacy ################      
+  req_nxp_enable_privacy:
+    seq:
+      - id: password_xor
+        type: u4
+        
+  ################ NXP SLIX: Write EAS ID ################ 
+  req_nxp_write_eas_id:
+    seq:
+      - id: eas_id
+        type: u2
+
+enums:
+  # https://en.wikipedia.org/wiki/ISO/IEC_15693
+  manufacturer_code_type:
+    0x01: motorola
+    0x02: stmicroelectronics
+    0x03: hitachi
+    0x04: nxp_semiconductors
+    0x05: infineon_technologies
+    0x06: cylink
+    0x07: texas_instruments
+    0x08: fujitsu
+    0x09: matsushita_electronics_corporation_semiconductor
+    0x0a: nec
+    0x0b: oki_electric_industry
+    0x0c: toshiba
+    0x0d: mitsubishi_electric
+    0x0e: samsung_electronics
+    0x0f: hynix
+    0x10: lg_semiconductors
+    0x11: emosyn_em_microelectronics
+    0x12: inside_technology
+    0x13: orga_kartensysteme
+    0x14: sharp
+    0x15: atmel
+    0x16: em_microelectronic_marin
+    0x17: smartrac_technology
+    0x18: zmd
+    0x19: xicor
+    0x1a: sony
+    0x1b: malaysia_microelectronic_solutions
+    0x1c: emosyn
+    0x1d: shanghai_fudan_microelectronics
+    0x1e: magellan_technology
+    0x1f: melexis
+    0x20: renesas_technology
+    0x21: tagsys
+    0x22: transcore
+    0x23: shanghai_belling
+    0x24: masktech_germany
+    0x25: innovision_research_and_technology
+    0x26: hitachi_ulsi_systems
+    0x27: yubico
+    0x28: ricoh
+    0x29: ask
+    0x2a: unicore_microsystems
+    0x2b: dallas_semiconductor_maxim
+    0x2c: impinj
+    0x2d: rightplug_alliance
+    0x2e: broadcom
+    0x2f: mstar_semiconductor
+    0x30: beedar_technology
+    0x31: rfidsec
+    0x32: schweizer_electronic
+    0x33: amic_technology
+    0x34: mikron
+    0x35: fraunhofer_institute_for_photonic_microsystems
+    0x36: ids_microship
+    0x37: kovio
+    0x38: hmt_microelectronic
+    0x39: silicon_craft_technology
+    0x3a: advanced_film_device
+    0x3b: nitecrest
+    0x3c: verayo
+    0x3d: hid_global
+    0x3e: productivity_engineering
+    0x3f: austriamicrosystems
+    0x40: gemalto
+    0x41: renesas_electronics
+    0x42: threealogics
+    0x43: top_troniq_asia
+    0x44: gentag
+    0x45: invengo_information_technology
+    0x46: guangzhou_sysur_microelectronics
+    0x47: ceitec
+    0x48: shanghai_quanray_electronics
+    0x49: mediatek
+    0x4a: angstrem
+    0x4b: celisic_semiconductor
+    0x4c: legic_identsystems
+    0x4d: balluff
+    0x4e: oberthur_technologies
+    0x4f: silterra_malaysia
+    0x50: delta
+    0x51: giesecke_devrient
+    0x52: shenzhen_china_vision_microelectronics
+    0x53: shanghai_feiju_microelectronics
+    0x54: intel
+    0x55: microsensys
+    0x56: sonix_technology
+    0x57: qualcomm_technologies
+    0x58: realtek_semiconductor
+    0x59: freevision_technologies
+    0x5a: giantec_semiconductor
+    0x5b: jsc_angstrem_t
+    0x5c: starchip
+    0x5d: spirtech
+    0x5e: gantner_electronic
+    0x5f: nordic_semiconductor
+    0x60: verisiti
+    0x61: wearlinks_technology
+    0x62: userstar_information_systems
+    0x63: pragmatic_printing
+    0x64: associacao_do_laboratorio_de_sistemas_integraveis_tecnologico
+    0x65: tendyron
+    0x66: muto_smart
+    0x67: on_semiconductor
+    0x68: tubitak_bilgem
+    0x69: huada_semiconductor
+    0x6a: seveney
+    0x6b: issm
+    0x6c: wisesec
+    0x7e: holtek
+
+
+  command_type:
+    0x01: inventory
+    0x02: stay_quiet
+    0x20: read_single_block
+    0x21: write_single_block
+    0x22: lock_block
+    0x23: read_multi_block
+    0x24: write_multi_block
+    0x25: select
+    0x26: reset_to_ready
+    0x27: write_afi
+    0x28: lock_afi
+    0x29: write_dsfid
+    0x2A: lock_dsfid
+    0x2B: get_system_information
+    0x2C: read_multi_secstatus
+    0xA2: nxp_set_eas
+    0xA3: nxp_reset_eas
+    0xA4: nxp_lock_eas
+    0xA5: nxp_eas_alarm
+    0xA6: nxp_password_protect_eas_afi
+    0xA7: nxp_write_eas_id
+    0xB0: nxp_inventory_page_read
+    0xB1: nxp_inventory_page_read_fast
+    0xB2: nxp_get_random_number
+    0xB3: nxp_set_password
+    0xB4: nxp_write_password
+    0xB5: nxp_lock_password
+    0xB9: nxp_destroy
+    0xBA: nxp_enable_privacy
+
+  nxp_password_type:
+    0x01: read
+    0x02: write
+    0x04: privacy
+    0x08: destroy
+    0x10: eas_afi
+    </div>
+    <!--noformat-->
+
+    <div class="branding">
+        <h1>Proxmark WebSerial</h1>
+    </div>
+
+    <div class="main-container">
+        <div class="alert">
+            <div class="alert-text">Not Connected</div>
+            <button type="button" class="btn alert-action" id="connectButton">Connect</button>
+        </div>
+        <div class="error">
+            <div class="error-text"></div>
+        </div>
+        <div class="log-container">
+            <div id="log"></div>
+        </div>
+        <div class="command-container">
+            <button type="button" class="btn command" id="hf15Read">ISO15693 Read UID</button>
+            <button type="button" class="btn command" id="hf15Sniff">ISO15693 Sniff Traffic</button>
+        </div>
+        <div class="flash-container">
+            <h3>Flash Firmware</h3>
+            <div>From File: <input type="file" id="firmwareInput" /></div>
+            <div>From g3gg0.de: <button id="downloadButton">Download</button></div>
+        </div>
+
+    </div>
+
+    <script>
+
+        async function compileKsy(cbr) {
+            var compiler = new KaitaiStructCompiler();
+            console.log("Kaitai compiler");
+            console.log("  Version: " + compiler.version);
+            console.log("  Build date: " + compiler.buildDate);
+            console.log("  Supported languages: " + compiler.languages.join(", "));
+            var ksyYaml = document.getElementById('iso15693_ksy').innerText;
+            var ksy = jsyaml.load(ksyYaml);
+
+            try {
+                console.log("Compiling " + ksyYaml.length + " bytes of ksy");
+                var files = await compiler.compile("javascript", ksy, null, false);
+                console.log("Compilation successful.");
+                for (let file of Object.keys(files)) {
+                    console.log("  Compiled " + file);
+                    eval(files[file]);
+                }
+            } catch (error) {
+                console.error("Compilation failed: ", error);
+            }
+        }
+
+        class BinaryBuffer {
+            constructor(buf = 0) {
+                if (typeof buf === 'number') {
+                    // If buf is a number, create a new Uint8Array of that length
+                    this.buffer = new Uint8Array(buf);
+                } else if (buf instanceof BinaryBuffer) {
+                    // If buf is an instance of BinaryBuffer, use its underlying Uint8Array
+                    this.buffer = buf.buffer;
+                } else {
+                    // Otherwise, assume buf is a Uint8Array or compatible type
+                    this.buffer = buf;
+                }
+            }
+
+            /**
+             * @brief Get a 64-bit integer as little endian from an Uint8Array buffer.
+             * 
+             * @param {Uint8Array} buffer The original buffer as Uint8Array.
+             * @param pos The offset position in the buffer where the 64-bit integer starts.
+             * @return The 64-bit integer read from the buffer at the specified position.
+             */
+            getUint64(pos) {
+                var number = 0;
+                for (let i = 0; i < 8; i++) {
+                    number |= this.buffer[pos + i] << (8 * i);
+                }
+
+                return number;
+            }
+
+            /**
+             * @brief Get a 32-bit integer as little endian from an Uint8Array buffer.
+             * 
+             * @param {Uint8Array} buffer The original buffer as Uint8Array.
+             * @param pos The offset position in the buffer where the 32-bit integer starts.
+             * @return The 32-bit integer read from the buffer at the specified position.
+             */
+            getUint32(pos) {
+                var number = 0;
+                for (let i = 0; i < 4; i++) {
+                    number |= this.buffer[pos + i] << (8 * i);
+                }
+
+                return number;
+            }
+
+            /**
+             * @brief Get a 16-bit integer as little endian from an Uint8Array buffer.
+             * 
+             * @param {Uint8Array} buffer The original buffer as Uint8Array.
+             * @param pos The offset position in the buffer where the 16-bit integer starts.
+             * @return The 16-bit integer read from the buffer at the specified position.
+             */
+            getUint16(pos) {
+                var number = 0;
+                for (let i = 0; i < 2; i++) {
+                    number |= this.buffer[pos + i] << (8 * i);
+                }
+
+                return number;
+            }
+
+            /**
+             * @brief Get a signed 16-bit integer as little endian from an Uint8Array buffer.
+             * 
+             * This method first reads an unsigned 16-bit integer from the buffer at the specified position,
+             * then checks if the most significant bit is set (indicating a negative number in two's complement form),
+             * and if so, converts it to the corresponding negative value.
+             * 
+             * @param {Uint8Array} buffer The original buffer as Uint8Array.
+             * @param pos The offset position in the buffer where the 16-bit integer starts.
+             * @return The signed 16-bit integer read from the buffer at the specified position.
+             */
+            getInt16(pos) {
+                let number = this.getUint16(pos);
+                if (number & 0x8000) {
+                    number = -(0xFFFF - number + 1);
+                }
+                return number;
+            }
+
+            /**
+             * Adds a 64-bit integer as little endian to a Uint8Array buffer.
+             * 
+             * @param {Uint8Array} buffer - The original buffer.
+             * @param {number} intToAdd - The 64-bit integer to add to the buffer.
+             * @returns {Uint8Array} - The new buffer with the integer added.
+             */
+            addUInt64(num) {
+                var intToAdd = BigInt(num);
+                this.addUInt32(Number(intToAdd & 0xFFFFFFFFn));
+                this.addUInt32(Number((intToAdd >> 32n) & 0xFFFFFFFFn));
+            }
+
+            /**
+             * Adds a 32-bit integer as little endian to a Uint8Array buffer.
+             * 
+             * @param {Uint8Array} buffer - The original buffer.
+             * @param {number} intToAdd - The 32-bit integer to add to the buffer.
+             * @returns {Uint8Array} - The new buffer with the integer added.
+             */
+            addUInt32(intToAdd) {
+                this.addUInt16(intToAdd & 0xFFFF);
+                this.addUInt16((intToAdd >> 16) & 0xFFFF);
+            }
+
+            /**
+             * Adds a 32-bit integer as little endian to a Uint8Array buffer.
+             * 
+             * @param {Uint8Array} buffer - The original buffer.
+             * @param {number} intToAdd - The 32-bit integer to add to the buffer.
+             * @returns {Uint8Array} - The new buffer with the integer added.
+             */
+            addUInt16(intToAdd) {
+                this.addUInt8(intToAdd & 0xFF);
+                this.addUInt8((intToAdd >> 8) & 0xFF);
+            }
+
+
+            /**
+             * Adds a 8-bit integer as little endian to a Uint8Array buffer.
+             * 
+             * @param {Uint8Array} buffer - The original buffer.
+             * @param {number} intToAdd - The 8-bit integer to add to the buffer.
+             * @returns {Uint8Array} - The new buffer with the integer added.
+             */
+            addUInt8(intToAdd) {
+                const newBuffer = new Uint8Array(this.length + 1);
+
+                newBuffer.set(this.buffer);
+                newBuffer[this.length] = intToAdd & 0xFF;
+
+                this.buffer = newBuffer;
+            }
+
+            /**
+             * Adds a 16-bit integer as little endian to a Uint8Array buffer.
+             * 
+             * @param {Uint8Array} buffer - The original buffer.
+             * @param {number} intToAdd - The 16-bit integer to add to the buffer.
+             * @returns {Uint8Array} - The new buffer with the integer added.
+             */
+            addInt16(intToAdd) {
+                const newBuffer = new Uint8Array(this.length + 2);
+
+                newBuffer.set(this.buffer);
+
+                for (let i = 0; i < 2; i++) {
+                    newBuffer[this.buffer.length + i] = (intToAdd >> (8 * i)) & 0xFF;
+                }
+
+                this.buffer = newBuffer;
+            }
+
+            /**
+             * Adds a buffer to a Uint8Array buffer.
+             * 
+             * @param {BinaryBuffer} bufferToAdd - The buffer to add.
+             */
+            addBuffer(bufferToAdd) {
+                if (bufferToAdd == null) {
+                    return;
+                }
+                const newBuffer = new Uint8Array(this.length + bufferToAdd.length);
+
+                newBuffer.set(this.buffer);
+                newBuffer.set(bufferToAdd.buffer, this.length);
+
+                this.buffer = newBuffer;
+            }
+
+            /**
+             * changes the size of an Uint8Array buffer.
+             * 
+             * @param {BinaryBuffer} bufferToAdd - The buffer to add.
+             */
+            resize(size) {
+                const newBuffer = new Uint8Array(size);
+                if (this.buffer == null || this.length == 0) {
+                    this.buffer = newBuffer;
+                    return;
+                }
+
+                newBuffer.set(this.buffer);
+                this.buffer = newBuffer;
+            }
+
+            /**
+             * Slices the buffer and returns a new BinaryBuffer instance with the sliced buffer.
+             * @param {number} start The beginning of the specified portion of the buffer.
+             * @param {number} end The end of the specified portion of the buffer. If not specified, slices to the end of the buffer.
+             * @returns {BinaryBuffer} A new BinaryBuffer instance containing the sliced portion of the buffer.
+             */
+            slice(start, end) {
+                const slicedBuffer = this.buffer.slice(start, end);
+                return new BinaryBuffer(slicedBuffer);
+            }
+
+            /**
+             * Copies the elements from a regular array, Uint8Array, or another BinaryBuffer
+             * into the BinaryBuffer starting at the specified offset.
+             * @param {ArrayLike<number> | ArrayBufferView | BinaryBuffer} sourceArray The array from which to copy elements.
+             * @param {number} offset The target index in the BinaryBuffer at which to start copying elements.
+             */
+            set(sourceArray, offset = 0) {
+                // Check if the sourceArray is an instance of BinaryBuffer
+                // and extract its underlying Uint8Array if so.
+                if (sourceArray instanceof BinaryBuffer) {
+                    sourceArray = sourceArray.buffer;
+                }
+
+                // Now that we've ensured sourceArray is a Uint8Array or a compatible array-like object,
+                // we can proceed to copy its elements into this.buffer.
+                this.buffer.set(sourceArray, offset);
+            }
+
+            // Getter for length property
+            get length() {
+                return this.buffer.length;
+            }
+
+        }
+
+        class ProxmarkInterface {
+            constructor() {
+                this.addLog = (msg) => { console.log(logMessage); }
+                this.connected = (bootloader) => { console.log("connected"); }
+                this.disconnected = () => { console.log("disconnected"); }
+
+                this.requestSniffed = () => { }
+                this.responseSniffed = () => { }
+                this.requestResponseSniffed = () => { }
+
+                this.readBufferNG = new Uint8Array(1024);
+                this.readBufferNG_filled = 0;
+                this.proxmarkPort = null;
+                this.Pm3a_Magic = 0x61334d50;
+                this.Pm3a_MagicCRC = 0x3361;
+                this.Pm3b_Magic = 0x62334d50;
+                this.eDeviceInfo = {
+                    None: 0,
+                    BootromPresent: 1,
+                    OsImagePresent: 2,
+                    ModeBootrom: 4,
+                    ModeOs: 8,
+                    UnderstandStartFlash: 16,
+                    UnderstandVersion: 32
+                };
+
+                this.eCommandType = {
+                    DeviceInfo: 0x0000,
+                    SetupWrite: 0x001,
+                    FinishWrite: 0x003,
+                    HardwareReset: 0x004,
+                    StartFlash: 0x005,
+
+                    Nack: 0xFE,
+                    Ack: 0xFF,
+                    DownloadBigbuf: 0x0207,
+                    DownloadedBigbuf: 0x0208,
+
+                    DebugString: 0x100,
+                    DebugInteger: 0x101,
+                    DebugBytes: 0x102,
+
+                    VersionInfo: 0x0107,
+                    Ping: 0x0109,
+
+                    ISO15693_READER: 0x0310,
+                    ISO15693_SIMULATE: 0x0311,
+                    ISO15693_SNIFF: 0x0312,
+                    ISO15693_COMMAND: 0x0313,
+                    ISO15693_FINDAFI: 0x0315,
+                    ISO15693_CSETUID: 0x0316,
+                    ISO15693_SLIX_ENABLE_PRIVACY: 0x0867,
+                    ISO15693_SLIX_DISABLE_PRIVACY: 0x0317,
+                    ISO15693_SLIX_DISABLE_EAS: 0x0318,
+                    ISO15693_SLIX_ENABLE_EAS: 0x0862,
+                    ISO15693_SLIX_PASS_PROTECT_AFI: 0x0863,
+                    ISO15693_SLIX_PASS_PROTECT_EAS: 0x0864,
+                    ISO15693_SLIX_WRITE_PWD: 0x0865,
+                    ISO15693_WRITE_AFI: 0x0866,
+                    ISO15693_EML_CLEAR: 0x0330,
+                    ISO15693_EML_SETMEM: 0x0331,
+
+                    MeasureAntennaTuning: 0x400,
+                    WTX: 0x116
+                }
+            }
+
+            /* Callback routines */
+            setLogCbr(cbr) {
+                this.addLog = cbr;
+            }
+            setConnectedCbr(cbr) {
+                this.connected = cbr;
+            }
+            setDisconnectedCbr(cbr) {
+                this.disconnected = cbr;
+            }
+            setReqSniffCbr(cbr) {
+                this.requestSniffed = cbr;
+            }
+            setResSniffCbr(cbr) {
+                this.responseSniffed = cbr;
+            }
+            setReqResSniffCbr(cbr) {
+                this.requestResponseSniffed = cbr;
+            }
+
+            /* log message wrapper */
+            addOkay(logMessage) {
+                addLog("$32[✔]$0 " + logMessage);
+            }
+
+            addInfo(logMessage) {
+                addLog("" + logMessage);
+            }
+
+            addWarn(logMessage) {
+                addLog("$33[⚠]$0 " + logMessage);
+            }
+
+            addError(logMessage) {
+                addLog("$31[✘]$0 " + logMessage);
+            }
+
+            async writeToSerialPort(data) {
+                const writer = this.proxmarkPort.writable.getWriter();
+                await writer.write(data.buffer);
+                writer.releaseLock();
+            }
+
+            async readWithTimeout(reader, timeoutMs) {
+                if (timeoutMs === undefined) {
+                    timeoutMs = 100;
+                }
+
+                if (timeoutMs < 10) {
+                    return reader.read();
+                }
+
+                const timeoutPromise = new Promise((_, reject) => {
+                    const id = setTimeout(() => {
+                        clearTimeout(id);
+                        reject(new Error('Read operation timed out after ' + timeoutMs + ' ms'));
+                    }, timeoutMs);
+                });
+
+                const readPromise = reader.read();
+
+                try {
+                    const result = await Promise.race([readPromise, timeoutPromise]);
+                    return result;
+                } catch (err) {
+                    throw err;
+                }
+            }
+
+            async readFromSerialPort(bytes, timeout) {
+                /* enough data in static buffer? */
+                if (this.readBufferNG_filled >= bytes) {
+                    const ret = this.readBufferNG.slice(0, bytes);
+                    const remain = this.readBufferNG_filled - bytes;
+                    this.readBufferNG.set(this.readBufferNG.slice(bytes, bytes + remain));
+                    this.readBufferNG_filled = remain;
+
+                    return new BinaryBuffer(ret);
+                }
+
+                const reader = this.proxmarkPort.readable.getReader();
+                try {
+                    while (this.readBufferNG_filled < bytes) {
+                        const { value, done } = await this.readWithTimeout(reader, timeout);
+                        if (done) {
+                            addError("Stream closed");
+                            this.disconnect();
+                            break;
+                        }
+                        this.readBufferNG.set(value, this.readBufferNG_filled);
+                        this.readBufferNG_filled += value.length;
+
+                        if (this.readBufferNG_filled >= bytes) {
+                            break;
+                        }
+                    }
+                } catch (err) {
+                    this.addError("Failed to read: " + err.message);
+                    disconnected();
+                    console.error(err);
+                } finally {
+                    reader.releaseLock();
+                }
+
+                if (this.readBufferNG_filled < bytes) {
+                    addError("Not enough data received");
+                    disconnected();
+                    return null;
+                }
+                const ret = this.readBufferNG.slice(0, bytes);
+                const remain = this.readBufferNG_filled - bytes;
+                this.readBufferNG.set(this.readBufferNG.slice(bytes, bytes + remain));
+                this.readBufferNG_filled = remain;
+
+                return new BinaryBuffer(ret);
+            }
+
+            formatBytes(sourceArray) {
+                var buf = sourceArray;
+                if (sourceArray instanceof BinaryBuffer) {
+                    buf = sourceArray.buffer;
+                }
+
+                return Array.from(buf)
+                    .map(byte => byte.toString(16).padStart(2, '0').toUpperCase())
+                    .join(' ');
+            }
+
+            dumpBuffer(buffer) {
+                addLog('Dump of ' + buffer.length + ' bytes:');
+                buffer.forEach(byte => {
+                    addLog(`0x${byte.toString(16).padStart(2, '0')}`);
+                });
+            }
+
+            async readResponse(timeout = 10000) {
+                /* first receive 10 bytesm then decide */
+                var ret = await this.readFromSerialPort(10, timeout);
+                if (ret == null) {
+                    return null;
+                }
+
+                var resp = {};
+                resp.magic = ret.getUint32(0);
+
+                if (resp.magic == this.Pm3b_Magic) {
+                    /* that's a NG response */
+                    resp.dataLen = ret.getUint16(4) & 0x7FFF;
+                    resp.status = ret.getInt16(6);
+                    resp.cmd = ret.getUint16(8);
+
+                    const remain = resp.dataLen + 2;
+                    var ret2 = await this.readFromSerialPort(remain, timeout);
+                    if (ret2 == null) {
+                        return null;
+                    }
+
+                    resp.data = ret2.slice(0, resp.dataLen);
+                    resp.crc = ret2.getUint16(resp.dataLen);
+
+                    if (false) {
+                        addLog("  resp_ng.magic: " + resp.magic);
+                        addLog("  resp_ng.dataLen: " + resp.dataLen);
+                        addLog("  resp_ng.status: " + resp.status);
+                        addLog("  resp_ng.cmd: " + resp.cmd);
+                        addLog("  resp_ng.crc: " + resp.crc);
+                    }
+                } else {
+                    /* legacy response */
+                    const legacyLen = 512 + 4 * 8;
+                    const buf = new BinaryBuffer(legacyLen);
+
+                    var ret2 = await this.readFromSerialPort(legacyLen - 10);
+
+                    buf.set(ret, 0);
+                    buf.set(ret2, 10);
+
+                    resp = {};
+                    resp.cmd = buf.getUint32(0);
+                    resp.dataLen = buf.getUint32(4);
+                    resp.arg0 = buf.getUint64(8);
+                    resp.arg1 = buf.getUint64(16);
+                    resp.arg2 = buf.getUint64(24);
+                    resp.data = buf.slice(32, 32 + 512);
+
+                    if (false) {
+                        addLog("  resp_old.cmd: " + resp.cmd);
+                        addLog("  resp_old.dataLen: " + resp.dataLen);
+                        addLog("  resp_old.arg0: " + resp.arg0);
+                        addLog("  resp_old.arg1: " + resp.arg1);
+                        addLog("  resp_old.arg2: " + resp.arg2);
+                    }
+                }
+                return resp;
+            }
+
+            async sendCommandLegacy(command, arg0 = 0, arg1 = 0, arg2 = 0, data) {
+                var buffer = new BinaryBuffer();
+                buffer.addUInt64(command);
+                buffer.addUInt64(arg0);
+                buffer.addUInt64(arg1);
+                buffer.addUInt64(arg2);
+                buffer.addBuffer(data);
+                buffer.resize(512 + 32);
+
+                this.writeToSerialPort(buffer);
+            }
+
+            async sendCommandNG(command, arg0 = 0, arg1 = 0, arg2 = 0, data) {
+                var buffer = new BinaryBuffer();
+                buffer.addUInt32(command);
+                buffer.addUInt32((data == null) ? 0 : data.length);
+                buffer.addUInt64(arg0);
+                buffer.addUInt64(arg1);
+                buffer.addUInt64(arg2);
+                buffer.addBuffer(data);
+                buffer.resize(512 + 32);
+
+                this.writeToSerialPort(buffer);
+            }
+
+            async cmdWriteFlash(address, buffer) {
+                var written = 0;
+
+                this.addLog("Writing " + buffer.length + " bytes to " + address);
+                this.sendCommandLegacy(this.eCommandType.StartFlash, address, 0x100000 + 256 * 1024);
+
+                var resp = await this.readResponse();
+
+                if (resp.cmd != this.eCommandType.Ack) {
+                    console.log(resp);
+                    this.addError("Did not receive an ACK");
+                    return false;
+                }
+
+                var pct = 0;
+                var lastPct = 0;
+
+                while (written < buffer.length) {
+
+                    var size = Math.min(256, buffer.length - written);
+                    this.sendCommandLegacy(this.eCommandType.FinishWrite, address + written, 0, 0, buffer.slice(written, written + size));
+
+                    var resp = await this.readResponse();
+
+                    if (resp.cmd != this.eCommandType.Ack) {
+                        console.log(resp);
+                        this.addError("Did not receive an ACK");
+                        return false;
+                    }
+                    written += size;
+
+                    pct = Math.floor(100 / buffer.length * written);
+
+                    if (pct != lastPct) {
+                        lastPct = pct;
+                        addLog("  Progress: " + pct + "%, " + written + " / " + buffer.length);
+                    }
+                }
+                this.addOkay("Success, resetting");
+                this.sendCommandLegacy(this.eCommandType.HardwareReset);
+                return true;
+            }
+
+            async cmdDeviceInfo() {
+                this.sendCommandLegacy(this.eCommandType.DeviceInfo);
+                var resp = await this.readResponse();
+
+                if (resp.cmd != this.eCommandType.DeviceInfo) {
+                    return false;
+                }
+
+                this.deviceInfo = resp.arg0;
+
+                this.addLog("    Device info: ");
+                this.addLog("      BOOTROM_PRESENT         " + ((resp.arg0 & this.eDeviceInfo.BootromPresent) !== 0 ? "Y" : "N"));
+                this.addLog("      OSIMAGE_PRESENT         " + ((resp.arg0 & this.eDeviceInfo.OsImagePresent) !== 0 ? "Y" : "N"));
+                this.addLog("      MODE_BOOTROM            " + ((resp.arg0 & this.eDeviceInfo.ModeBootrom) !== 0 ? "Y" : "N"));
+                this.addLog("      MODE_OS                 " + ((resp.arg0 & this.eDeviceInfo.ModeOs) !== 0 ? "Y" : "N"));
+                this.addLog("      UNDERSTANDS_START_FLASH " + ((resp.arg0 & this.eDeviceInfo.UnderstandStartFlash) !== 0 ? "Y" : "N"));
+                this.addLog("      UNDERSTANDS_VERSION     " + ((resp.arg0 & this.eDeviceInfo.UnderstandVersion) !== 0 ? "Y" : "N"));
+
+                return true;
+            }
+
+            async cmdPing() {
+                this.sendCommandNG(this.eCommandType.Ping);
+                var resp = await this.readResponse();
+
+                return resp.cmd == this.eCommandType.Ping;
+            }
+
+            async cmdVersionInfo() {
+                this.sendCommandNG(this.eCommandType.VersionInfo);
+                var resp = await this.readResponse();
+
+                if (resp.cmd != this.eCommandType.VersionInfo) {
+                    return false;
+                }
+
+                var vers = {};
+                vers.id = resp.data.getUint32(0);
+                vers.section_size = resp.data.getUint32(4);
+                var len = resp.data.getUint64(8);
+                vers.versionstr_len = (len >> 24) | ((len >> 16) & 0xFF);
+
+                const decoder = new TextDecoder('utf-8');
+                vers.versionstr = decoder.decode(resp.data.slice(12, 12 + len).buffer);
+
+                this.addLog("    Version info: ");
+                this.addLog("      Chip ID:        " + `0x${vers.id.toString(16).padStart(8, '0')}`);
+                this.addLog("      Section size:   " + `0x${vers.section_size.toString(16).padStart(8, '0')}`);
+                this.addLog("      Version:        ");
+                this.addLog("---------------------------------------------------------");
+                this.addLog(vers.versionstr);
+                this.addLog("---------------------------------------------------------");
+
+                return true;
+            }
+
+            handleDebug(response) {
+                const flags = response.data[0] + (response.data[1] << 8);
+                const decoder = new TextDecoder('utf-8');
+                const debugStr = decoder.decode(response.data.slice(2, response.dataLength).buffer).trimEnd('\0');
+
+                return "'" + debugStr + "'";
+            }
+
+            handleDefault(response) {
+                switch (response.cmd) {
+                    case this.eCommandType.DebugString:
+                        addLog("> " + this.handleDebug(response) + "");
+                        return true;
+
+                    case this.eCommandType.WTX:
+                        var wtx = response.data.getInt16(0);
+                        addLog("WTX received: " + wtx);
+                        return true;
+
+                    default:
+                        addLog("Unhandled: " + response.cmd);
+                        return true;
+                }
+            }
+
+            parseElement(buffer, pos) {
+                var item = {};
+                item.timeout = buffer.getUint32(pos + 0);
+                item.duration = buffer.getUint16(pos + 4);
+                const data_len = buffer.getUint16(pos + 6);
+                item.dataLen = data_len & 0x7FFF;
+                item.response = (data_len & 0x8000) != 0;
+                const payload = buffer.slice(pos + 8, pos + 8 + item.dataLen);
+                item.data = payload;
+                item.parityBytes = Math.floor((item.dataLen - 1) / 8 + 1);
+                item.size = 8 + item.dataLen + item.parityBytes;
+
+                return item;
+            }
+
+            async downloadBigbuf() {
+                this.sendCommandNG(this.eCommandType.DownloadBigbuf, 0, 0);
+                const sizeRet = await this.readResponse();
+                if (sizeRet.cmd != 0xFF) {
+                    addError("Failed to fetch buffer usage");
+                    return false;
+                }
+
+                /* buffer size is stored in offset 0x10 as arg2 */
+                var totalSize = sizeRet.data.getUint64(16);
+                this.addInfo("Buffer usage: " + totalSize + " bytes");
+
+                const wholeBuffer = new BinaryBuffer(totalSize);
+                var start = 0;
+                var size = 512;
+                var remain = totalSize;
+
+                while (remain > 0) {
+                    if (size > remain) {
+                        size = remain;
+                    }
+                    this.sendCommandNG(this.eCommandType.DownloadBigbuf, start, size);
+                    var ret = await this.readResponse();
+                    //console.log(ret);
+                    var ret2 = await this.readResponse();
+                    if (ret2.cmd != 0xFF) {
+                        break;
+                    }
+
+                    wholeBuffer.set(ret.data.slice(0, size), start);
+                    start += size;
+                    remain -= size;
+                }
+
+                var pos = 0;
+                var storedRequest = null;
+                while (pos < totalSize) {
+                    const elem = this.parseElement(wholeBuffer, pos);
+                    //console.log(elem);
+                    //this.addOkay(" " + (elem.response ? "<" : ">") + " " + this.formatBytes(elem.data));
+
+                    if (elem.response) {
+                        if (storedRequest != null) {
+                            requestResponseSniffed(storedRequest.data, elem.data);
+                            storedRequest = null;
+                        } else {
+                            responseSniffed(elem.data);
+                        }
+                    } else {
+                        /* received a request but the last packet also was a request */
+                        if (storedRequest != null) {
+                            /* drain the old request */
+                            requestSniffed(storedRequest.data);
+                        }
+                        /* save the new one */
+                        storedRequest = elem;
+                    }
+                    pos += elem.size;
+                }
+
+                if (storedRequest != null) {
+                    requestSniffed(storedRequest.data);
+                    storedRequest = null;
+                }
+                return true;
+            }
+
+            disconnect() {
+                if (this.proxmarkPort != null) {
+                    this.proxmarkPort.close();
+                    this.proxmarkPort = null;
+                }
+                disconnected();
+            }
+
+            async connect(port) {
+                this.addInfo("Trying to open port");
+                try {
+                    await port.open({ baudRate: 115200 });
+                    this.proxmarkPort = port;
+                    this.addLog(" - opened");
+
+                    port.addEventListener("disconnect", (event) => {
+                        this.addError("Port got disconnected");
+                        this.disconnect();
+                    });
+
+                    this.addLog(" - Query: DeviceInfo");
+                    if (await this.cmdDeviceInfo() != true) {
+                        this.addError("DeviceInfo failed");
+                        this.disconnect();
+                        return;
+                    }
+
+                    if ((this.deviceInfo & this.eDeviceInfo.ModeBootrom) != 0) {
+                        this.addOkay("Connected in bootloader mode");
+                        this.connected(true);
+                    } else {
+                        this.addLog(" - Query: Ping");
+                        if (await this.cmdPing() != true) {
+                            this.addError("Ping failed");
+                            this.disconnect();
+                            return;
+                        }
+                        this.addLog(" - Query: VersionInfo");
+                        if (await this.cmdVersionInfo() != true) {
+                            this.addError("VersionInfo failed");
+                            this.disconnect();
+                            return;
+                        }
+
+                        this.addOkay("Connected");
+                        this.connected(false);
+                    }
+                } catch (err) {
+                    this.disconnect();
+                    if (err.code == 19) {
+                        this.addError("Failed to connect - Port could not be opened. Already in use by another program?");
+                    } else {
+                        this.addError("Failed to connect: " + err.message);
+                        console.error('There was an error opening the serial port: ', err);
+                    }
+                }
+            }
+
+            async iso15693Read() {
+                this.sendCommandNG(proxmarkInterface.eCommandType.ISO15693_READER);
+
+                while (true) {
+                    var ret = await this.readResponse();
+                    //console.log(ret);
+                    switch (ret.cmd) {
+                        case this.eCommandType.ISO15693_READER:
+                            switch (ret.status) {
+                                case 0:
+                                    var uid = this.formatBytes(ret.data).replace(/ /g, '');
+                                    this.addOkay("Detected: " + uid);
+                                    return uid;
+                                case -21:
+                                    this.addError("Failed");
+                                    return;
+                            }
+                            break;
+                    }
+
+                    if (!this.handleDefault(ret)) {
+                        break;
+                    }
+                }
+            }
+
+            async iso15693Sniff() {
+                this.sendCommandNG(this.eCommandType.ISO15693_SNIFF);
+
+                while (true) {
+                    var ret = await this.readResponse(0);
+                    //console.log(ret);
+                    switch (ret.cmd) {
+                        case this.eCommandType.ISO15693_SNIFF:
+                            switch (ret.status) {
+                                case 0:
+                                    this.addOkay("Finished");
+                                    break;
+                                default:
+                                    this.addError("Unknown response");
+                                    break;
+                            }
+                            var buf = this.downloadBigbuf();
+                            return;
+                    }
+
+                    if (!this.handleDefault(ret)) {
+                        break;
+                    }
+
+                }
+            }
+        }
+
+
+        function replaceAnsiWithHtmlColors(ansiString) {
+            const colorMap = {
+                '0': 'color:#a8a8a8;', // Reset
+                '30': 'color:black;', // Black
+                '31': 'color:red;', // Red
+                '32': 'color:green;', // Green
+                '33': 'color:yellow;', // Yellow
+                '34': 'color:blue;', // Blue
+                '35': 'color:magenta;', // Magenta
+                '36': 'color:cyan;', // Cyan
+                '37': 'color:white;', // White
+                '90': 'color:grey;', // Bright Black (Grey)
+                '91': 'color:lightred;', // Bright Red
+                '92': 'color:lightgreen;', // Bright Green
+                '93': 'color:lightyellow;', // Bright Yellow
+                '94': 'color:lightblue;', // Bright Blue
+                '95': 'color:lightmagenta;', // Bright Magenta
+                '96': 'color:lightcyan;', // Bright Cyan
+                '97': 'color:lightwhite;' // Bright White
+            };
+
+            const regex = /\x1b\[(\d+)m/g;
+            const regex2 = /\$(\d+)/g;
+            return ansiString.replace(regex, (match, p1) => {
+                const colorStyle = colorMap[p1];
+                if (colorStyle) {
+                    return `<span style="${colorStyle}">`;
+                } else if (p1 === '0') {
+                    return `</span>`;
+                }
+                return match;
+            }).replace(regex2, (match, p1) => {
+                const colorStyle = colorMap[p1];
+                if (colorStyle) {
+                    return `<span style="${colorStyle}">`;
+                } else if (p1 === '0') {
+                    return `</span>`;
+                }
+                return match;
+            }) + '</span>';
+        }
+
+        function addLog(logMessage) {
+            //console.log(logMessage);
+            const line = replaceAnsiWithHtmlColors(logMessage);
+            const logElement = document.querySelector('#log');
+            logElement.innerHTML += line + '<br>';
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function addError(message) {
+            addLog("$31[✘]$0 " + message);
+        }
+
+        function addOkay(message) {
+            addLog("$32[✔]$0 " + message);
+        }
+
+        function setError(message) {
+            addLog("$31[✘]$0 " + message);
+            document.querySelector('.alert').style.display = 'none';
+            document.querySelector('.error').style.display = 'flex';
+            document.querySelector('.error-text').innerHTML = message;
+        }
+
+        function registerButton(button, func) {
+            document.getElementById(button).addEventListener('click', func);
+        }
+
+        function connected(bootloader) {
+            if (bootloader) {
+                document.querySelector('.alert').style.display = 'none';
+                document.querySelector('.flash-container').style.display = 'block';
+            } else {
+                document.querySelector('.alert').style.display = 'none';
+                document.querySelector('.command-container').style.display = 'flex';
+            }
+        }
+
+        function disconnected() {
+            document.querySelector('.alert').style.display = 'flex';
+            document.querySelector('.error').style.display = 'none';
+            document.querySelector('.command-container').style.display = 'none';
+            document.querySelector('.flash-container').style.display = 'none';
+        }
+
+        function Iso15693GetTypeValue(key, value) {
+            let typeName = key.charAt(0).toUpperCase() + key.slice(1) + 'Type';
+
+            if (Iso15693[typeName] && Iso15693[typeName][value]) {
+                return `${Iso15693[typeName][value]} (0x${value.toString(16)})`;
+            }
+            return value.toString(16);
+        }
+
+        function Iso15693Dump(obj, indent = '       ') {
+            for (let key in obj) {
+                if (!obj.hasOwnProperty(key) || key.startsWith('_')) continue;
+
+                let value = obj[key];
+
+                if (typeof value === 'number') {
+                    value = Iso15693GetTypeValue(key, value);
+                } else if (typeof value === 'string') {
+                    value = Iso15693GetTypeValue(key, value);
+                }
+
+                if (typeof obj[key] === 'object' && value !== null) {
+                    addLog(indent + key + ':');
+                    Iso15693Dump(obj[key], indent + '  ');
+                } else {
+                    addLog(indent + key + ': ' + value);
+                }
+            }
+        }
+
+        function formatBytes(sourceArray) {
+            var buf = sourceArray;
+            if (sourceArray instanceof BinaryBuffer) {
+                buf = sourceArray.buffer;
+            }
+
+            return Array.from(buf)
+                .map(byte => byte.toString(16).padStart(2, '0').toUpperCase())
+                .join(' ');
+        }
+
+        function requestResponseSniffed(req, res) {
+            try {
+                var buf = new BinaryBuffer();
+                buf.addUInt8(req.length);
+                buf.addBuffer(req);
+                buf.addUInt8(res.length);
+                buf.addBuffer(res);
+
+                var parsed = new Iso15693.RequestResponse(new KaitaiStream(buf.buffer));
+                //console.log(parsed);
+                addOkay("> " + formatBytes(req.buffer));
+                Iso15693Dump(parsed.req);
+                addOkay("< " + formatBytes(res.buffer));
+                Iso15693Dump(parsed.res);
+                addLog("");
+            } catch (ex) {
+                requestSniffed(req);
+                responseSniffed(res);
+            }
+        }
+
+        function requestSniffed(req) {
+            try {
+                addOkay("> " + formatBytes(req.buffer));
+                var parsed = new Iso15693.Request(new KaitaiStream(req.buffer));
+                //console.log(parsed);
+                Iso15693Dump(parsed);
+            } catch (ex) {
+                addLog("> " + formatBytes(req.buffer));
+            }
+        }
+
+        function responseSniffed(res) {
+            addOkay("< " + formatBytes(res.buffer));
+            addLog("");
+        }
+
+        compileKsy();
+
+        const proxmarkInterface = new ProxmarkInterface();
+
+        proxmarkInterface.setLogCbr(addLog);
+        proxmarkInterface.setConnectedCbr(connected);
+        proxmarkInterface.setDisconnectedCbr(disconnected);
+        proxmarkInterface.setReqSniffCbr(requestSniffed);
+        proxmarkInterface.setResSniffCbr(responseSniffed);
+        proxmarkInterface.setReqResSniffCbr(requestResponseSniffed);
+
+        registerButton('connectButton', async () => {
+            if ('serial' in navigator) {
+                addLog(" - waiting for user selection");
+                try {
+                    const port = await navigator.serial.requestPort();
+                    proxmarkInterface.connect(port);
+                } catch (err) {
+                    disconnected();
+                    if (err.code == 8) {
+                        addError("User aborted port selection.");
+                    } else {
+                        addError("Failed to connect: " + err.message);
+                        console.error('There was an error opening the serial port:', err);
+                    }
+                }
+            } else {
+                console.error('Web Serial API not supported.');
+            }
+        });
+
+        registerButton('hf15Read', async () => {
+            proxmarkInterface.iso15693Read();
+        });
+
+        registerButton('hf15Sniff', async () => {
+            proxmarkInterface.iso15693Sniff();
+        });
+
+        document.getElementById('downloadButton').addEventListener('click', async () => {
+            try {
+                const response = await fetch(firmwareUrl);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const arrayBuffer = await response.arrayBuffer();
+
+                proxmarkInterface.cmdWriteFlash(0x00102000, new BinaryBuffer(new Uint8Array(arrayBuffer)));
+            } catch (err) {
+                addLog('Download failed: ' + err.message);
+                console.log(err);
+            }
+        });
+
+        document.getElementById('firmwareInput').addEventListener('change', function (event) {
+            const file = event.target.files[0];
+            if (!file) {
+                console.log("No file selected.");
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function (loadEvent) {
+                const arrayBuffer = loadEvent.target.result;
+                proxmarkInterface.cmdWriteFlash(0x00102000, new BinaryBuffer(new Uint8Array(arrayBuffer)));
+            };
+
+            reader.readAsArrayBuffer(file);
+        });
+
+        disconnected();
+        if ('serial' in navigator) {
+            addLog("Ready to connect");
+        } else {
+            setError("WebSerial API is not supported by your browser, use Edge or Chrome")
+        }
+    </script>
+</body>
+
+</html>
